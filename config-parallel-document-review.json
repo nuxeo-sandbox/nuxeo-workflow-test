@@ -1,0 +1,52 @@
+{
+  "baseUrl": "http://localhost:8080/nuxeo",
+  "document": {
+    "creator": "Administrator",
+    "path": "/default-domain/workspaces/",
+    "type": "File",
+    "name": "File",
+    "properties": {
+      "dc:title": "parallel_document_review_test",
+      "file:content": {
+        "type": "blob",
+        "file": "files/legacy-systems-risks.pdf",
+        "mimeType": "application/pdf"
+      }
+    }
+  },
+  "workflow": {
+    "initiator": "Administrator",
+    "name": "ParallelDocumentReview",
+    "variables": {}
+  },
+  "scenario": [{
+    "role": "Administrator",
+    "action": "start_review",
+    "variables": {
+      "participants": [{
+        "type": "user",
+        "role": "Administrator"
+      }, "Administrators"],
+      "end_date": "2019-06-28T15:00:00.000Z",
+      "comment": "yo"
+    }
+  },{
+    "role": "Administrator",
+    "action": "approve",
+    "variables": {
+      "comment": "yoyo"
+    }
+  }, {
+    "role": "Administrator",
+    "action": "reject",
+    "variables": {
+      "comment": "nono"
+    }
+  }, {
+    "role": "Administrator",
+    "action": "validate",
+    "variables": {
+      "comment": "ok"
+    }
+  }]
+}
