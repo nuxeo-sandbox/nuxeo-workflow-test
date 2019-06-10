@@ -27,13 +27,9 @@ The index.js uses two configuration files
 Describes the credentials to use for each role in the workflow
 ```
 {
-  "Manager":{
-    "username":"manager",
-    "password":"123"
-  },
-  "Underwriter":{
-    "username":"underwriter",
-    "password":"456"
+  "Administrator":{
+    "username":"Administrator",
+    "password":"Administrator"
   }
 }
 
@@ -47,29 +43,38 @@ Describes the process to simulate
 {
   "baseUrl":"http://localhost:8080/nuxeo",
   "document": {
-      "creator":"Manager",
-      "path": "/default-domain/ApplicationRoot",
-      "type":"Application",
-      "name":"AP",
-      "properties": {}
+      "creator":"Administrator",
+      "path": "/default-domain/workspaces/",
+      "type":"File",
+      "name":"MyFile",
+      "properties": {
+        "file:content":{
+          "type": "blob",
+          "file": "files/legacy-systems-risks.pdf",
+          "mimeType": "application/pdf"
+        }
+      }
   },
   "scenario": [
     {
-      "role":"Manager",
-      "action":"assign",
-      "variables":{
-        "underwriter": "Bob"
+      "role": "Administrator",
+      "action": "start_review",
+      "variables": {
+        "participants": [{
+          "type": "user",
+          "role": "Administrator"
+        }, {
+          "type": "user",
+          "role": "Administrator"
+        }],
+        "validationOrReview": "simpleReview",
+        "comment": "This is a test"
       }
-    },
-    {
-      "role":"Underwriter",
-      "action":"proceed",
-      "variables":{
-        "examination_blob":{
-          "type":"blob",
-          "file":"files/guarantor-request-example.pdf",
-          "mimeType":"application/pdf"
-        }
+    },{
+      "role": "Administrator",
+      "action": "validate",
+      "variables": {
+        "comment": "Cool"
       }
     }
   ]
@@ -86,8 +91,21 @@ Describes the process to simulate
     - if a variable is a blob, the variable value must be an object as described in the sample above
 
 ## Run
+
 ```
-node index.js
+node index.js --config="<MY_CONFIG_FILE>" --credentials="<MY_CREDENTIAL_FILE>" --serverUrl="<MY_SERVER>"
+```
+
+## Examples
+
+Run the default Serial Document Review on a OOTB Nuxeo application running at http://localhost:8080
+```
+node index.js --credentials="sample-credentials.json"
+```
+
+Run the default Parallel Document Review on a OOTB Nuxeo application running at http://localhost:8080
+```
+node index.js --config="config-parallel-document-review.json" --credentials="sample-credentials.json"
 ```
 
 ## Known limitations
