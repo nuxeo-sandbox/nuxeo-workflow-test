@@ -1,15 +1,19 @@
 {
   "name": "nuxeo-workflow-test",
   "version": "1.0.0",
-  "description": "",
+  "description": "Nuxeo Workflow Test Driver",
   "main": "index.js",
   "scripts": {
+    "start": "./index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
+  "bin": {
+    "nuxeo-wf-test": "./index.js"
+  },
+  "author": "Nuxeo",
   "license": "ISC",
   "dependencies": {
     "command-line-args": "^5.1.1",
-    "nuxeo": "^3.14.0"
+    "nuxeo": "^3.16.1"
   }
 }

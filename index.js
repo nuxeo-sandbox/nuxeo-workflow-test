@@ -1,7 +1,11 @@
+#!/usr/bin/env node
+
 const Nuxeo = require('nuxeo');
 const fs = require('fs');
 const path = require('path');
 const commandLineArgs = require('command-line-args');
+
+const log = console;
 
 const optionDefinitions = [{
     name: 'credentials',
@@ -15,21 +19,26 @@ const optionDefinitions = [{
   },
   {
     name: 'serverUrl',
-    type: String,
-    defaultValue: "http://localhost:8080/nuxeo"
+    type: String
   }
-]
+];
 
 const options = commandLineArgs(optionDefinitions);
-console.log("Parameters: "+ prettyPrintObject(options));
+log.dir(options);
 
 const config = JSON.parse(fs.readFileSync(options.config, 'utf8'));
 const credentials = JSON.parse(fs.readFileSync(options.credentials, 'utf8'));
 
+if (!options.serverUrl) {
+  options.serverUrl = config.baseUrl;
+}
+log.info("Server URL: " + options.serverUrl);
 
 //init nuxeo clients for each persona
 const nxClients = {};
+
 for (var role in credentials) {
+  log.info("Adding role: " + role + " with user " + credentials[role].username);
   nxClients[role] = new Nuxeo({
     baseURL: options.serverUrl,
     auth: {
@@ -37,10 +46,12 @@ for (var role in credentials) {
       username: credentials[role].username,
       password: credentials[role].password
     }
-  })
+  });
 }
 
-console.log(prettyPrintObject(config));
+log.dir(config, {
+  depth: null
+});
 
 //create the document for the workflow
 let documentDesc = {
@@ -51,98 +62,146 @@ let documentDesc = {
 };
 
 createDocument(nxClients[config.document.creator], documentDesc)
-  .then(function(doc) {
+  .then(function (doc) {
     documentDesc = doc;
-    console.log("Document created: "+ prettyPrintObject(doc));
     if (config.workflow) {
+      log.info("Starting workflow: " + config.workflow.name);
       return startWorkflow(nxClients[config.workflow.initiator], documentDesc.path, config.workflow);
     } else {
       return Promise.resolve();
     }
-  }).then(function(workflow) {
-    return performStep(documentDesc.path, config.scenario, 0, nxClients);
-  }).then(function(data) {
-    console.log("Scenario Completed");
-    return nxClients[config.document.creator].repository().fetch(documentDesc.path, {
-      "schemas":"*"
+  }).then(function (workflow) {
+    log.info("Started workflow instance");
+    log.dir(workflow, {
+      depth: null
     });
-  }).then(function(doc) {
-    console.log("Document after the workflow: "+ prettyPrintObject(doc));
+    return performStep(documentDesc.path, config.scenario, 0, nxClients);
+  }).then(function (data) {
+    log.info("Scenario Completed");
+    return nxClients[config.document.creator].repository().fetch(documentDesc.path, {
+      "schemas": "*"
+    });
+  }).then(function (doc) {
+    log.info("Document after the workflow");
+    log.dir(doc, {
+      depth: null
+    });
+    return doc;
   })
-  .catch(function(error) {
+  .then(function (doc) {
+    log.debug("Checking open workflows...");
+    return doc.fetchWorkflows();
+  })
+  .then(function (workflows) {
+    if (workflows.entries.length > 0) {
+      log.warn("WARNING: workflows are still active on the document");
+      log.dir(workflows, {
+        depth: null
+      });
+    } else {
+      log.info("All workflows completed");
+      return nxClients[config.document.creator].repository().delete(documentDesc.path);
+    }
+  }).catch(function (error) {
+    log.info("Error encountered when creating document: " + JSON.stringify(error));
     throw error;
   });
 
-
 function createDocument(client, document) {
-  return substituteProperties(document.properties,{
+  return substituteProperties(document.properties, {
     client: client,
     substitutionFunction: setActualUsersAndUploadFiles,
     credentials: credentials
-  }).then(function(batchInfo) {
-    return substituteProperties(document.properties,{
+  }).then(function (batchInfo) {
+    return substituteProperties(document.properties, {
       client: client,
       substitutionFunction: replaceFileDescByUploadBatchInfo,
       batchInfo: batchInfo,
       credentials: credentials
     });
-  }).then(function(data) {
-    console.log("Creating Document: "+ prettyPrintObject(document));
-    return client.repository().create(config.document.path, document, {
-      "schemas":"*"
+  }).then(function (data) {
+    log.info("Creating Document: [" + config.document.path + "] ");
+    log.dir(document, {
+      depth: null
     });
-  })
+    return client.repository().create(config.document.path, document, {
+      "schemas": "*"
+    });
+  });
 }
 
 
 //Perform one workflow step
 function performStep(documentPath, steps, stepIndex, nxClients) {
   const step = steps[stepIndex];
-  const client = nxClients[step.role];
+  // const client = nxClients[step.role];
+  const role = step.role;
+  log.debug(credentials[role].username + ": " + credentials[role].password);
+  const client = new Nuxeo({
+    baseURL: options.serverUrl,
+    auth: {
+      method: 'basic',
+      username: credentials[role].username,
+      password: credentials[role].password
+    }
+  });
   const actualDocumentPath = step.documentPathModifier ? documentPath + step.documentPathModifier : documentPath;
+  log.info("Role for step: " + step.role + " fetching: " + actualDocumentPath);
+
   let task;
   return client.repository().fetch(actualDocumentPath)
-    .then(function(doc) {
+    .then(function (doc) {
+      log.debug("Current step: " + prettyPrintObject(step));
       return doc.fetchWorkflows();
     })
-    .then(function(workflows) {
+    .then(function (workflows) {
+      log.debug("Current workflows: " + prettyPrintObject(workflows));
+      if (step.workflow) {
+        var ent = workflows.entries.find(e => e.workflowModelName === step.workflow);
+        if (ent) {
+          log.info("Using workflow: " + prettyPrintObject(ent));
+          return ent.fetchTasks();
+        }
+      }
       return workflows.entries[0].fetchTasks();
     })
-    .then(function(tasks) {
+    .then(function (tasks) {
+      log.debug("Current tasks: " + prettyPrintObject(tasks));
       task = tasks.entries[0];
-      return substituteProperties(step.variables,{
+      return substituteProperties(step.variables, {
         client: client,
         substitutionFunction: setActualUsersAndUploadFiles,
         credentials: credentials
       });
     })
-    .then(function(batchInfo) {
-      return substituteProperties(step.variables,{
+    .then(function (batchInfo) {
+      return substituteProperties(step.variables, {
         client: client,
         substitutionFunction: replaceFileDescByUploadBatchInfo,
         batchInfo: batchInfo,
         credentials: credentials
       });
     })
-    .then(function(data) {
+    .then(function (data) {
       for (var variable in step.variables) {
         task.variable(variable, step.variables[variable]);
       }
-      console.log("Completing Task "+prettyPrintObject({
-        "name":task.name,
+      log.info("Completing Task");
+      log.dir({
+        "name": task.name,
         "user": client._auth.username,
         "action": step.action,
-        "variables":  step.variables
-      }));
+        "variables": step.variables
+      });
       return task.complete(step.action);
-    }).then(function(task) {
+    }).then(function (task) {
       if (stepIndex + 1 < steps.length) {
         return performStep(documentPath, steps, stepIndex + 1, nxClients);
       } else {
         Promise.resolve();
       }
     })
-    .catch(function(error) {
+    .catch(function (error) {
       throw error;
     });
 }
@@ -170,7 +229,7 @@ function substituteArrayProperty(array, ctx) {
     if (substitute) {
       array[index] = substitute;
     }
-  })
+  });
 }
 
 function substituteProperty(property, ctx) {
@@ -219,11 +278,11 @@ function uploadFile(client, value) {
 
 function startWorkflow(client, documentPath, workflow) {
   return client.repository().fetch(documentPath)
-    .then(function(doc) {
+    .then(function (doc) {
       return doc.startWorkflow(workflow.name, workflow.variables);
     });
 }
 
 function prettyPrintObject(object) {
-  return JSON.stringify(object,null,2);
+  return JSON.stringify(object, null, 2);
 }

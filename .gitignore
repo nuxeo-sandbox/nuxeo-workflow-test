@@ -32,3 +32,4 @@ target
 index-local.html
 credentials*.json
 package-lock.json
+.vscode
